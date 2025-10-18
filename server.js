@@ -1,6 +1,7 @@
 import express from "express";
 import { fetch } from "undici";
-import { Server, Tool, startHttpServer } from "@modelcontextprotocol/sdk/server/index.js";
+import { Server, startHttpServer } from "@modelcontextprotocol/sdk/server/index.js";
+import { z } from "zod";
 
 // === ENV ===
 const ODDS_API_KEY = process.env.ODDS_API_KEY || "06046913ffe0a112914a992f9d28f4f4";
@@ -24,18 +25,15 @@ const mcp = new Server({ name: "betiq-mcp", version: "1.0.0" }, {});
 
 // Tool 1: get_odds
 mcp.tool(
-  new Tool({
+  {
     name: "get_odds",
     description: "Fetch H2H odds from The Odds API",
-    inputSchema: {
-      type: "object",
-      properties: {
-        sport:   { type: "string", default: "soccer_epl" },
-        regions: { type: "string", default: "eu" },
-        markets: { type: "string", default: "h2h" }
-      }
-    }
-  }),
+    inputSchema: z.object({
+      sport: z.string().default("soccer_epl"),
+      regions: z.string().default("eu"),
+      markets: z.string().default("h2h"),
+    })
+  },
   async ({ sport = "soccer_epl", regions = "eu", markets = "h2h" }) => {
     const url = `https://api.the-odds-api.com/v4/sports/${sport}/odds?regions=${regions}&markets=${markets}&oddsFormat=decimal&apiKey=${ODDS_API_KEY}`;
     const r = await fetch(url);
@@ -46,32 +44,20 @@ mcp.tool(
 
 // Tool 2: value_analyze
 mcp.tool(
-  new Tool({
+  {
     name: "value_analyze",
     description: "Compute baseline (Pinnacle/consensus) + edge/EV for betano/bet365/winbet/inbet",
-    inputSchema: {
-      type: "object",
-      properties: {
-        event: { type: "object" },
-        books: {
-          type: "array",
-          items: { type: "string" },
-          default: ["betano","bet365","winbet","inbet"]
-        }
-      },
-      required: ["event"]
-    }
-  }),
+    inputSchema: z.object({
+      event: z.any(),
+      books: z.array(z.string()).default(["betano","bet365","winbet","inbet"])
+    })
+  },
   async ({ event, books = ["betano","bet365","winbet","inbet"] }) => {
     const home = event.home_team, away = event.away_team, bms = event.bookmakers || [];
-
-    // 1) baseline: Pinnacle → консенсус
+    // baseline: Pinnacle → consensus
     let base = null;
     const pin = bms.find(b => b.key === "pinnacle");
-    if (pin) {
-      const o = extractH2H(pin, home, away);
-      if (o) base = removeOverround(o.home, o.draw, o.away);
-    }
+    if (pin) { const o = extractH2H(pin, home, away); if (o) base = removeOverround(o.home, o.draw, o.away); }
     if (!base) {
       const hs=[], ds=[], as=[];
       for (const b of bms) {
@@ -85,7 +71,6 @@ mcp.tool(
     }
     if (!base) return { baseline:{overround:1}, results:[], bestOverall:null };
 
-    // 2) edge/EV към целевите букмейкъри
     const edge = (p,o)=> p - 1/o, ev = (p,o)=> p*o - 1;
     const results = [];
     for (const b of bms) {
@@ -101,7 +86,6 @@ mcp.tool(
       c.sort((a,b)=> b.edge - a.edge);
       results.push({ book: b.key, best: c[0], all: c });
     }
-
     const bestOverall = results.slice().sort((a,b)=> b.best.edge - a.best.edge)[0] || null;
     return {
       baseline: base,
