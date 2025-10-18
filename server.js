@@ -1,6 +1,7 @@
 import express from "express";
 import { fetch } from "undici";
-import { Server, startHttpServer } from "@modelcontextprotocol/sdk/server/index.js";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { startHttpServer } from "@modelcontextprotocol/sdk/server/http.js";
 import { z } from "zod";
 
 // === ENV ===
